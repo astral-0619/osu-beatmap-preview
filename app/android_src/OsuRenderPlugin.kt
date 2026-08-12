@@ -1,7 +1,7 @@
 package io.github.astral.osu
 
 import android.content.Context
-import android.graphics.Surface
+import android.view.Surface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
