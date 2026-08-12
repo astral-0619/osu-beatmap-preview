@@ -55,26 +55,50 @@ pub extern "system" fn JNI_OnLoad(_vm: jni::sys::JavaVM, _res: *mut c_void) -> j
     0x00010006 // JNI_VERSION_1_6
 }
 
-/// Kotlin passes the ANativeWindow pointer created from the Flutter
-/// Texture's Surface. The render thread starts (or restarts) rendering.
-#[no_mangle]
-pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeSurfaceCreated<'frame>(
-    _env: EnvUnowned<'frame>,
-    _class: JClass<'frame>,
-    window_ptr: jlong,
-) {
-    let s = shared();
-    s.window.store(window_ptr, Ordering::Release);
-    renderer::surface_created(window_ptr as *mut c_void);
+// Android NDK: convert a Java Surface into an ANativeWindow (borrowed;
+// the caller must ANativeWindow_release it when done).
+unsafe extern "system" {
+    #[link_name = "ANativeWindow_fromSurface"]
+    fn anativewindow_from_surface(env: *mut jni::sys::JNIEnv, surface: jni::sys::jobject) -> *mut c_void;
+    #[link_name = "ANativeWindow_release"]
+    fn anativewindow_release(window: *mut c_void);
 }
 
-/// Surface destroyed (rotation / backgrounding). Stops the render thread.
+/// Kotlin passes the Java Surface wrapping the Flutter Texture's
+/// SurfaceTexture. We convert it to an ANativeWindow here (the render
+/// thread borrows it until `nativeSurfaceDestroyed`).
+#[no_mangle]
+pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeSurfaceCreated<'frame>(
+    env: EnvUnowned<'frame>,
+    _class: JClass<'frame>,
+    surface: jni::objects::JObject<'frame>,
+) {
+    let window_ptr = unsafe { anativewindow_from_surface(env.into_raw(), surface.into_raw()) };
+    if window_ptr.is_null() {
+        log::error!("ANativeWindow_fromSurface returned null");
+        return;
+    }
+    let s = shared();
+    // release the previous window if this is a re-create (rotation / resume)
+    let old = s.window.swap(window_ptr as i64, Ordering::AcqRel);
+    if old != 0 {
+        unsafe { anativewindow_release(old as *mut c_void) };
+    }
+    renderer::surface_created(window_ptr);
+}
+
+/// Surface destroyed (rotation / backgrounding). Stops the render thread
+/// and releases the ANativeWindow.
 #[no_mangle]
 pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeSurfaceDestroyed<'frame>(
     _env: EnvUnowned<'frame>,
     _class: JClass<'frame>,
 ) {
-    shared().window.store(0, Ordering::Release);
+    let s = shared();
+    let old = s.window.swap(0, Ordering::AcqRel);
+    if old != 0 {
+        unsafe { anativewindow_release(old as *mut c_void) };
+    }
     renderer::surface_destroyed();
 }
 

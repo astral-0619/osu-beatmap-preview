@@ -6,11 +6,11 @@ Android 端实时渲染器（Flutter + Rust/wgpu），输入 osu! 谱面（.osu 
 ## 分层
 
 ```
-Kotlin (Flutter Plugin)
+Kotlin (Flutter Plugin, app/android_src/OsuRenderPlugin.kt)
   │  JNI: OsuRenderPlugin_* (crates/osu-android/src/lib.rs)
   ▼
 Rust cdylib `osu_android`
-  ├─ lib.rs      JNI 入口 + 全局共享状态（window 指针、音频时间、暂停、模式、倍速）
+  ├─ lib.rs      JNI 入口（Surface jobject → ANativeWindow）+ 全局共享状态
   ├─ renderer.rs wgpu 实例/surface/渲染线程 + 2D 图元批量绘制（ShapeBatcher）
   └─ modes.rs    谱面状态 + 逐帧绘制（standard/taiko/catch/mania）
 ```
@@ -37,7 +37,7 @@ Rust cdylib `osu_android`
 ```
 nativeLoadBeatmap(path)  → 解包 .osz/读 .osu → BeatmapState（含音频路径）
 Kotlin 拿音频路径喂 ExoPlayer
-nativeSurfaceCreated(windowPtr) → 建 wgpu surface → 渲染线程启动
+nativeSurfaceCreated(surface) → ANativeWindow_fromSurface → wgpu surface → 渲染线程启动
 ExoPlayer tick → nativeSetAudioTimeMs(t) → 渲染线程画 t 时刻帧
 ```
 
