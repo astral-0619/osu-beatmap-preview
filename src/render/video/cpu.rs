@@ -6,7 +6,7 @@
 //! separate phases, so the encoder can use openh264's automatic thread count
 //! without competing with the Rayon render pool.
 
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 use openh264::encoder::{
     BitRate, Complexity, EncodedBitStream, Encoder, EncoderConfig, FrameRate, IntraFramePeriod,

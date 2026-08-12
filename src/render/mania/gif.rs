@@ -1,13 +1,13 @@
 //! osu!mania GIF renderer: multi-segment or single-screen falling-note preview.
 //! Port of beatmap_preview/mania/gif_renderer.py.
 
-use crate::common::time_selection::{
+use osu_beatmap_core::common::time_selection::{
     GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector, TimeAxis,
 };
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, ManiaHitObject, TimingPoint};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, render_text_sprite, text_size};
@@ -711,7 +711,7 @@ struct PreLabel {
 }
 
 fn build_pre_label(
-    timing: &crate::common::time_selection::PreviewSegmentTiming,
+    timing: &osu_beatmap_core::common::time_selection::PreviewSegmentTiming,
     duration_ms: i64,
     layout: &GifLayout,
     seg_left: i64,

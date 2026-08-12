@@ -1,4 +1,4 @@
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};

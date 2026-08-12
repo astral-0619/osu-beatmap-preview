@@ -1,8 +1,8 @@
-use crate::common::time_selection::{resolve_gif_clip_range, GifRenderOptions, TimeAxis};
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, HitObjects};
-use crate::core::mods::ModSettings;
-use crate::core::validate::{self, ValidateContext};
+use osu_beatmap_core::common::time_selection::{resolve_gif_clip_range, GifRenderOptions, TimeAxis};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, HitObjects};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::core::validate::{self, ValidateContext};
 use crate::log::{self, CacheKind, SummaryRecord};
 use crate::pipeline::cache;
 use crate::render::video::audio::AudioSourceJob;
@@ -96,7 +96,7 @@ fn generate_preview_inner(
     rec.osu_bytes = beatmap_path.metadata().ok().map(|meta| meta.len());
 
     let t1 = Instant::now();
-    let mut beatmap = crate::parser::parse_beatmap(&beatmap_path)?;
+    let mut beatmap = osu_beatmap_core::parser::parse_beatmap(&beatmap_path)?;
     rec.parse_ms = Some(t1.elapsed().as_secs_f64() * 1000.0);
 
     if fmt == Some("mp4") && beatmap.beatmap_set_id().is_none() {
@@ -700,9 +700,9 @@ fn resolve_convert_target(beatmap: &Beatmap, name: &str) -> Result<i32> {
 type ConvertFn = fn(&Beatmap, i32, Option<&ModSettings>) -> Result<Beatmap>;
 
 static CONVERTERS: &[(i32, ConvertFn)] = &[
-    (1, crate::render::taiko::conv::taiko_convert),
-    (2, crate::render::catch::conv::catch_convert),
-    (3, crate::render::mania::conv::mania_convert),
+    (1, osu_beatmap_core::common::conv_taiko::taiko_convert),
+    (2, osu_beatmap_core::common::conv_catch::catch_convert),
+    (3, osu_beatmap_core::common::conv_mania::mania_convert),
 ];
 
 fn convert_beatmap(
@@ -757,7 +757,7 @@ fn render_preview_for_mode(
     audio_job: Option<AudioSourceJob>,
     bid: &str,
 ) -> Result<PathBuf> {
-    let display_times_ms = crate::common::time_selection::times_to_milliseconds(times.as_deref())?;
+    let display_times_ms = osu_beatmap_core::common::time_selection::times_to_milliseconds(times.as_deref())?;
     let mods_ref = mods.as_ref();
 
     renderer.validate(&beatmap)?;
@@ -830,7 +830,7 @@ fn render_preview_for_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::ManiaHitObject;
+    use osu_beatmap_core::core::models::ManiaHitObject;
 
     #[test]
     fn time_axis_uses_first_object_from_target_mode_objects() {

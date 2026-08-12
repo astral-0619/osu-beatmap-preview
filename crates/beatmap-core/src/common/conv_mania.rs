@@ -214,7 +214,7 @@ impl ConversionState<'_> {
 
 // ── public API ──
 
-pub(crate) fn mania_convert(
+pub fn mania_convert(
     beatmap: &Beatmap,
     target_mode: i32,
     mods: Option<&ModSettings>,

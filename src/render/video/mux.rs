@@ -5,7 +5,7 @@
 //! slice and length-prefixes the slices for the `mp4` crate's `Mp4Sample`,
 //! matching the format the muxer expects.
 
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use std::path::Path;
 
 /// NAL unit type is the lower 5 bits of the first byte (start code already

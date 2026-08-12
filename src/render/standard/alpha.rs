@@ -1,6 +1,6 @@
 //! Alpha / timing helpers for osu!standard renderer.
 
-use crate::core::models::StandardHitObject;
+use osu_beatmap_core::core::models::StandardHitObject;
 
 use super::constants::*;
 use super::context::RenderSettings;

@@ -27,7 +27,7 @@
 //!
 //! AMF outputs Annex-B by default; the shared `mux` module parses it.
 
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 
 use super::mux::extract_nals_from_annexb;

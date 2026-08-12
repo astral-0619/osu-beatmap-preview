@@ -1,12 +1,12 @@
 //! osu!catch render-object expansion: fruits, juice streams, banana showers,
 //! HR offsets, hyperdash. RNG call order mirrors Python/stable exactly.
 
-use crate::common::legacy_random::{stateless_next_int, LegacyRandom};
-use crate::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, CatchHitObject, TimingPoint};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::common::legacy_random::{stateless_next_int, LegacyRandom};
+use osu_beatmap_core::common::slider_path::{build_catch_slider_path, path_position_at, SliderPath};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, CatchHitObject, TimingPoint};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 
 use super::constants::*;
 

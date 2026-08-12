@@ -1,6 +1,6 @@
 //! 太鼓行背景与 note 的程序化绘制（classic-2013 风格，无图片资源）。
 
-use crate::parser::round_half_even;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Img;
 use std::collections::HashMap;
 

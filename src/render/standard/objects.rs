@@ -1,6 +1,6 @@
 //! Hit object rendering: hit circles, sliders, spinners, approach circles.
 
-use crate::core::models::{BreakPeriod, StandardHitObject};
+use osu_beatmap_core::core::models::{BreakPeriod, StandardHitObject};
 use crate::render::canvas::Img;
 
 use super::alpha::*;
@@ -130,7 +130,7 @@ fn draw_slider(
             context.settings.traceable,
         );
     } else {
-        let visible_path = crate::common::slider_path::slice_path(
+        let visible_path = osu_beatmap_core::common::slider_path::slice_path(
             &slider_data.frame_path,
             snaked_start,
             snaked_end,
@@ -416,7 +416,7 @@ fn draw_break_overlay(
     frame: &mut Img,
     break_period: &BreakPeriod,
     snapshot_time: i64,
-    time_axis: crate::common::time_selection::TimeAxis,
+    time_axis: osu_beatmap_core::common::time_selection::TimeAxis,
 ) {
     let alpha = break_overlay_alpha(break_period, snapshot_time);
     if alpha <= 0.0 {

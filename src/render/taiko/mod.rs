@@ -4,7 +4,6 @@
 //! Re-exports from submodules: [constants], [timing], [notes], [png], [gif].
 
 mod constants;
-pub(crate) mod conv;
 mod gif;
 mod notes;
 mod png;

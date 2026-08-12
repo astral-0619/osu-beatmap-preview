@@ -1,9 +1,9 @@
 //! Shared mania helpers: key-count resolution, mod applications, SV changes,
 //! lane palette, and timing utilities.
 
-use crate::core::errors::PreviewError;
-use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
-use crate::parser::round_half_even;
+use osu_beatmap_core::core::errors::PreviewError;
+use osu_beatmap_core::core::models::{Beatmap, ManiaHitObject, TimingPoint};
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Rgba;
 use std::collections::BTreeMap;
 

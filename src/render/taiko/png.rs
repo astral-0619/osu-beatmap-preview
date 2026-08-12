@@ -3,11 +3,11 @@
 //! 行切分以小节线为锚点：每行的起点对齐到一条小节线（measure line），
 //! 保证视觉上每行最左侧都是重拍位置。
 
-use crate::common::time_selection::TimeAxis;
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, TaikoHitObject};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::common::time_selection::TimeAxis;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, TaikoHitObject};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer;
 use crate::render::text::{draw_text, text_size};
@@ -75,7 +75,7 @@ pub(crate) fn render_taiko_grid(
     // Always trim leading silence, starting directly from the first note.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time =
-        crate::common::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
+        osu_beatmap_core::common::time_selection::snap_to_beat_grid(first_note_time, &beatmap.timing_points);
 
     let effective_chart_end_time: i64;
     if chart_start_time > 0 {

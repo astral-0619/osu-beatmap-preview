@@ -1,9 +1,9 @@
 //! Slider rendering: path data, body, ball, reverse arrows for osu!standard.
 
-use crate::common::slider_path::{
+use osu_beatmap_core::common::slider_path::{
     build_path, build_standard_slider_path, path_position_at, SliderPath,
 };
-use crate::core::models::StandardHitObject;
+use osu_beatmap_core::core::models::StandardHitObject;
 use crate::render::canvas::Img;
 use std::collections::HashMap;
 use std::sync::Arc;

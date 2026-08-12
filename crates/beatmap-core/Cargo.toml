@@ -1,0 +1,11 @@
+[package]
+name = "osu-beatmap-core"
+version = "1.0.7"
+edition = "2021"
+description = "osu-beatmap-preview core: .osu parsing, models, mods, conversion, slider paths, time selection"
+license = "MIT"
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+log = "0.4"

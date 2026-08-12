@@ -1,12 +1,12 @@
 //! osu!taiko GIF renderer: multi-segment preview or single-screen clip.
 
-use crate::common::time_selection::{
+use osu_beatmap_core::common::time_selection::{
     GifClipRange, GifRenderOptions, PreviewSegmentTiming, PreviewTimeSelector,
 };
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, TaikoHitObject, TimingPoint};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, TaikoHitObject, TimingPoint};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer;
 use crate::render::text::{draw_text, text_size};
@@ -100,7 +100,7 @@ fn render_taiko_segment_gif(
     beatmap: &Beatmap,
     mods: Option<&ModSettings>,
     times_ms: Option<Vec<i64>>,
-    time_axis: crate::common::time_selection::TimeAxis,
+    time_axis: osu_beatmap_core::common::time_selection::TimeAxis,
     output_path: &Path,
 ) -> Result<()> {
     let hit_objects = apply_taiko_object_mods(taiko_hit_objects(beatmap), mods);
@@ -713,7 +713,7 @@ fn draw_time_label(
     row_index: i64,
     layout: &GifLayout,
     is_preview: bool,
-    time_axis: crate::common::time_selection::TimeAxis,
+    time_axis: osu_beatmap_core::common::time_selection::TimeAxis,
 ) {
     let y = gif_row_top(row_index, layout) + layout.row_height + 5;
     let label = format!(
@@ -761,7 +761,7 @@ fn draw_time_label_range(
     row_index: i64,
     layout: &GifLayout,
     is_preview: bool,
-    time_axis: crate::common::time_selection::TimeAxis,
+    time_axis: osu_beatmap_core::common::time_selection::TimeAxis,
 ) {
     let y = gif_row_top(row_index, layout) + layout.row_height + 5;
     let label = format!(

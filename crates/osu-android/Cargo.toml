@@ -1,0 +1,22 @@
+[package]
+name = "osu-android"
+version = "0.1.0"
+edition = "2021"
+description = "Android realtime wgpu renderer for osu-beatmap-preview (JNI cdylib)"
+
+[lib]
+name = "osu_android"
+crate-type = ["cdylib"]
+
+[dependencies]
+osu-beatmap-core = { path = "../beatmap-core" }
+jni = "0.22"
+wgpu = { version = "30", default-features = false, features = ["gles", "vulkan"] }
+raw-window-handle = "0.6"
+parking_lot = "0.12"
+log = "0.4"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+bytemuck = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-context = "0.1"

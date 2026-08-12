@@ -22,10 +22,10 @@
 //! at build time or runtime never breaks compilation or execution — the encoder
 //! silently falls back to CPU.
 
-use crate::common::time_selection::TimeAxis;
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::Beatmap;
-use crate::parser::round_half_even;
+use osu_beatmap_core::common::time_selection::TimeAxis;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::Beatmap;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::text::{draw_text, text_size};
 use crate::render::video::audio::{
@@ -580,7 +580,7 @@ fn drop_stdout_silence<F: FnOnce()>(f: F) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::models::{HitObjects, KvSection};
+    use osu_beatmap_core::core::models::{HitObjects, KvSection};
 
     fn beatmap_with_preview(preview_time: Option<&str>, lead_in: Option<&str>) -> Beatmap {
         let mut general = KvSection::default();

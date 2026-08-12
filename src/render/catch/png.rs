@@ -4,11 +4,11 @@
 //! 谱面总高度有上限（防止超长 / 高 AR 谱面导致内存爆炸），超出时
 //! 按比例压缩纵向密度。
 
-use crate::common::time_selection::TimeAxis;
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::{Beatmap, TimingPoint};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::common::time_selection::TimeAxis;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::{Beatmap, TimingPoint};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::Img;
 use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
@@ -209,7 +209,7 @@ pub(crate) fn render_catch_grid(
     // aligned to the red-line beat grid.
     let first_note_time = hit_objects.iter().map(|h| h.start_time).min().unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::common::time_selection::snap_to_beat_grid(
+        osu_beatmap_core::common::time_selection::snap_to_beat_grid(
             first_note_time - 1000,
             &beatmap.timing_points,
         )

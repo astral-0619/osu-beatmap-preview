@@ -1,9 +1,9 @@
 //! Output caching helpers: file-name formatting, mtime-based cache validity,
 //! and deterministic-time checks.
 
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::KvSection;
-use crate::core::mods::ModSettings;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::KvSection;
+use osu_beatmap_core::core::mods::ModSettings;
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -117,7 +117,7 @@ pub fn output_cache_hit(
 
     // Output must be newer than the program build.
     let out_mtime = out_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-    if out_mtime < crate::core::build_time::build_time() {
+    if out_mtime < osu_beatmap_core::core::build_time::build_time() {
         return None;
     }
 

@@ -6,7 +6,7 @@ use crate::core::mods::ModSettings;
 
 use crate::common::conversion::std_objects;
 
-pub(crate) fn catch_convert(
+pub fn catch_convert(
     beatmap: &Beatmap,
     target_mode: i32,
     _mods: Option<&ModSettings>,

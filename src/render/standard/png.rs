@@ -1,9 +1,9 @@
 //! osu!standard PNG grid renderer: 5×8 gameplay snapshots.
 
-use crate::common::time_selection::TimeAxis;
-use crate::core::errors::Result;
-use crate::core::models::Beatmap;
-use crate::core::mods::ModSettings;
+use osu_beatmap_core::common::time_selection::TimeAxis;
+use osu_beatmap_core::core::errors::Result;
+use osu_beatmap_core::core::models::Beatmap;
+use osu_beatmap_core::core::mods::ModSettings;
 use crate::render::canvas::Img;
 use crate::render::text::format_mmssmmm;
 
@@ -50,7 +50,7 @@ pub(crate) fn render_standard_png(
             let snapshot_time = snapshot_times[image_index];
             let x =
                 HORIZONTAL_PAGE_MARGIN + image_index as i64 * (IMAGE_WIDTH + INTRA_ROW_IMAGE_GAP);
-            let empty_breaks: Vec<crate::core::models::BreakPeriod> = Vec::new();
+            let empty_breaks: Vec<osu_beatmap_core::core::models::BreakPeriod> = Vec::new();
             let breaks = if row_timing.is_preview {
                 &row_timing.break_periods
             } else {

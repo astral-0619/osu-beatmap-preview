@@ -3,12 +3,12 @@
 //! 单帧 683×384（16:9），playfield 的位置与缩放按游戏内 1080p 等比换算
 //! （见 constants.rs 中 GIF_PLAYFIELD_* 常量），上下左右留白与游戏一致。
 
-use crate::common::time_selection::{
+use osu_beatmap_core::common::time_selection::{
     GifClipRange, GifRenderOptions, PreviewTimeSelector, TimeAxis,
 };
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::Beatmap;
-use crate::core::mods::ModSettings;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::Beatmap;
+use osu_beatmap_core::core::mods::ModSettings;
 use crate::render::canvas::Img;
 use crate::render::composer::save_animated_gif_streamed;
 use crate::render::text::{draw_text, text_size};

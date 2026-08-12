@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/beatmap-core", "crates/osu-android"]
+resolver = "2"
+
 [package]
 name = "osu-beatmap-preview"
 version = "1.0.7"
@@ -7,6 +11,7 @@ edition = "2021"
 vergen = { version = "9", features = ["build"] }
 
 [dependencies]
+osu-beatmap-core = { path = "crates/beatmap-core" }
 ureq = "2"
 lexopt = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }

@@ -3,7 +3,10 @@
 
 use std::time::SystemTime;
 
-const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
+const BUILD_TIMESTAMP: &str = match option_env!("VERGEN_BUILD_TIMESTAMP") {
+    Some(v) => v,
+    None => "unknown",
+};
 
 /// Return the program build time as a `SystemTime`, parsed from the ISO 8601
 /// build timestamp injected by `vergen` / `build.rs`.

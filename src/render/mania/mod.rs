@@ -1,7 +1,6 @@
 //! osu!mania renderers: vertical multi-column PNG chart and 4-segment GIF.
 //! Port of beatmap_preview/mania/{renderer,gif_renderer,skin,config}.py.
 
-pub(crate) mod conv;
 mod gif;
 mod png;
 mod skin;

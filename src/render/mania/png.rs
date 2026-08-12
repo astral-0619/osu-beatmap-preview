@@ -1,11 +1,11 @@
 //! osu!mania PNG grid renderer.
 //! Port of beatmap_preview/mania/renderer.py.
 
-use crate::common::time_selection::TimeAxis;
-use crate::core::errors::Result;
-use crate::core::models::{Beatmap, ManiaHitObject, TimingPoint};
-use crate::core::mods::ModSettings;
-use crate::parser::round_half_even;
+use osu_beatmap_core::common::time_selection::TimeAxis;
+use osu_beatmap_core::core::errors::Result;
+use osu_beatmap_core::core::models::{Beatmap, ManiaHitObject, TimingPoint};
+use osu_beatmap_core::core::mods::ModSettings;
+use osu_beatmap_core::parser::round_half_even;
 use crate::render::canvas::{Img, Rgba};
 use crate::render::composer::save_png;
 use crate::render::text::{draw_text, text_size};
@@ -88,7 +88,7 @@ pub(crate) fn render_mania_grid(
         .min()
         .unwrap_or(0);
     let chart_start_time = if first_note_time >= 5000 {
-        crate::common::time_selection::snap_to_beat_grid(
+        osu_beatmap_core::common::time_selection::snap_to_beat_grid(
             first_note_time - 1000,
             &beatmap.timing_points,
         )
@@ -209,7 +209,7 @@ fn ceil_div(a: i64, b: i64) -> i64 {
 
 fn calculate_column_count(beatmap_duration: i64, total_chart_height: i64) -> Result<i64> {
     if beatmap_duration >= MAX_SUPPORTED_DURATION_MS {
-        return Err(crate::core::errors::PreviewError::render(
+        return Err(osu_beatmap_core::core::errors::PreviewError::render(
             "songs longer than 10 minutes are not supported",
         ));
     }

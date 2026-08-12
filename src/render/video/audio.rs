@@ -1,5 +1,5 @@
-use crate::core::errors::{PreviewError, Result};
-use crate::core::models::Beatmap;
+use osu_beatmap_core::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::models::Beatmap;
 use fdk_aac::enc::{AudioObjectType, BitRate, ChannelMode, Encoder, EncoderParams, Transport};
 use std::fs::File;
 use std::io::{Read, Seek, Write};

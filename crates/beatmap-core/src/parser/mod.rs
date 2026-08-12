@@ -30,15 +30,10 @@ pub fn parse_beatmap(path: &Path) -> Result<Beatmap> {
     let beatmap = parse_beatmap_str(content)
         .ok_or_else(|| PreviewError::parse("Failed to parse beatmap."))?;
     let ms = started.elapsed().as_secs_f64() * 1000.0;
-    crate::log::event(
-        "parse",
-        "done",
-        None,
-        &format!(
-            "mode={} objects={} in {ms:.1} ms",
-            beatmap.mode(),
-            beatmap.hit_objects.len()
-        ),
+    log::debug!(
+        "parse done: mode={} objects={} in {ms:.1} ms",
+        beatmap.mode(),
+        beatmap.hit_objects.len()
     );
     Ok(beatmap)
 }

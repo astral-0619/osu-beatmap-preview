@@ -25,7 +25,7 @@ struct SliderConversionValues {
     taiko_velocity: f64,
 }
 
-pub(crate) fn taiko_convert(
+pub fn taiko_convert(
     beatmap: &Beatmap,
     target_mode: i32,
     _mods: Option<&ModSettings>,

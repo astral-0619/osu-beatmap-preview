@@ -3,7 +3,7 @@
 //! resides in memory at once.  Frames are rendered in parallel chunks (rayon)
 //! and encoded sequentially to preserve delta-frame ordering.
 
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 use rayon::prelude::*;
 use std::path::Path;

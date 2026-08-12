@@ -24,7 +24,7 @@
 //! - GOP = 2s of frames; NVENC emits SPS/PPS before the first IDR by default
 //! - Output is Annex-B, parsed by the shared `mux` module
 
-use crate::core::errors::{PreviewError, Result};
+use osu_beatmap_core::core::errors::{PreviewError, Result};
 use crate::render::canvas::Img;
 
 use super::mux::extract_nals_from_annexb;
