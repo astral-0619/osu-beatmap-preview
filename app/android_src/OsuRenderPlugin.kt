@@ -44,16 +44,17 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         init {
             System.loadLibrary("osu_android")
         }
-
-        // JNI 符号名对应 Java_io_github_astral_osu_OsuRenderPlugin_*
-        private external fun nativeSurfaceCreated(surface: Surface)
-        private external fun nativeSurfaceDestroyed()
-        private external fun nativeLoadBeatmap(path: String): String
-        private external fun nativeSetAudioTimeMs(positionMs: Long)
-        private external fun nativeSetPaused(paused: Boolean)
-        private external fun nativeSetMode(mode: Int)
-        private external fun nativeSetSpeed(speedX100: Int)
     }
+
+    // 声明在类本体（非 companion），保证 JNI 符号就是
+    // Java_io_github_astral_osu_OsuRenderPlugin_*，与 Rust 侧一致。
+    private external fun nativeSurfaceCreated(surface: Surface)
+    private external fun nativeSurfaceDestroyed()
+    private external fun nativeLoadBeatmap(path: String): String
+    private external fun nativeSetAudioTimeMs(positionMs: Long)
+    private external fun nativeSetPaused(paused: Boolean)
+    private external fun nativeSetMode(mode: Int)
+    private external fun nativeSetSpeed(speedX100: Int)
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
