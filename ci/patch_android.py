@@ -29,7 +29,7 @@ m = manifest.read_text()
 if "android.permission.INTERNET" not in m:
     m = re.sub(
         r"(<manifest\b[^>]*>)",
-        r"\1\n    <uses-permission android:name=\"android.permission.INTERNET\" />",
+        r'\1\n    <uses-permission android:name="android.permission.INTERNET" />',
         m,
         count=1,
     )
