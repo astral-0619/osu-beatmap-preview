@@ -1,4 +1,4 @@
-use osu_beatmap_core::core::errors::{PreviewError, Result};
+use crate::core::errors::{PreviewError, Result};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

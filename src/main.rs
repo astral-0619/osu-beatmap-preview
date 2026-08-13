@@ -225,6 +225,7 @@ fn log_test_lines() -> Option<usize> {
 fn run_log_test(lines: usize) {
     let dir = std::env::var("OSU_PREVIEW_LOG_DIR").ok().map(PathBuf::from);
     log::init(dir.as_deref());
+    install_downloader_log_bridge();
     for i in 0..lines {
         log::event("test", "info", Some("test-bid"), &format!("test line {i}"));
     }
@@ -237,6 +238,25 @@ fn run_log_test(lines: usize) {
     std::process::exit(0);
 }
 
+/// 智能下载器已迁入 beatmap-core，其日志调用经 core 的 log facade 转发；
+/// 这里把 facade 接到本包的 NDJSON 日志系统，行为与迁入前一致。
+fn install_downloader_log_bridge() {
+    osu_beatmap_core::log::install(
+        |step, status, bid, msg| log::event(step, status, bid, msg),
+        |kind, state| {
+            let kind = match kind {
+                osu_beatmap_core::log::CacheKind::Osu => log::CacheKind::Osu,
+                osu_beatmap_core::log::CacheKind::Osz => log::CacheKind::Osz,
+                osu_beatmap_core::log::CacheKind::Audio => log::CacheKind::Audio,
+                osu_beatmap_core::log::CacheKind::Output => log::CacheKind::Output,
+            };
+            log::record_cache(kind, state);
+        },
+        |name, ms| log::record_stage(name, ms),
+        |name, status| log::record_stage_status(name, status),
+    );
+}
+
 fn main() {
     if let Some(lines) = log_test_lines() {
         run_log_test(lines);
@@ -246,6 +266,7 @@ fn main() {
     if !args.no_log {
         log::init(args.log_dir.as_deref());
     }
+    install_downloader_log_bridge();
     match run(&args) {
         Ok(mut result) => {
             if let Some(obj) = result.as_object_mut() {

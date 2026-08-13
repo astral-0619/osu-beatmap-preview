@@ -12,10 +12,7 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.TextureRegistry
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Flutter 侧插件：Flutter Texture 上挂 wgpu 渲染，ExoPlayer 只播音频当主时钟。
@@ -32,6 +29,7 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private lateinit var textureRegistry: TextureRegistry
     private var textureEntry: TextureRegistry.SurfaceTextureEntry? = null
     private var player: ExoPlayer? = null
+    private var downloading = false
     private val handler = Handler(Looper.getMainLooper())
 
     private val clockPoller = object : Runnable {
@@ -56,6 +54,11 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private external fun nativeSetPaused(paused: Boolean)
     private external fun nativeSetMode(mode: Int)
     private external fun nativeSetSpeed(speedX100: Int)
+    // 智能下载（Rust 侧，与原 osu-beatmap-preview 下载器同一套逻辑）：
+    // 返回本地 .osz 路径，失败返回 "ERR:<详情>"。
+    private external fun nativeDownloadByBid(bid: Int, cacheDir: String): String
+    // 取走 Rust 侧累积的下载日志（取走后清空），用于实时上屏。
+    private external fun nativeTakeDownloadLog(): String
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -75,14 +78,38 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 "loadByBid" -> {
                     val bid = (call.argument<Number>("bid") ?: throw IllegalArgumentException("no bid")).toInt()
                     val dir = File(context.cacheDir, "beatmaps").apply { mkdirs() }
-                    val osz = File(dir, "$bid.osz")
-                    if (!osz.exists() || !isZip(osz)) {
-                        report("开始下载 bid=$bid …")
-                        downloadOsz(bid, osz)
-                    } else {
-                        report("命中缓存: ${osz.name}")
+                    // 下载走 Rust 侧智能下载（多镜像竞速 + CF 优选 IP），
+                    // 后台线程执行，期间轮询把下载日志实时上屏。
+                    report("智能下载中（多镜像竞速）…")
+                    downloading = true
+                    val cacheDirPath = dir.absolutePath
+                    val poller = object : Runnable {
+                        override fun run() {
+                            if (!downloading) return
+                            val logs = nativeTakeDownloadLog()
+                            if (logs.isNotEmpty()) report(logs)
+                            handler.postDelayed(this, 500)
+                        }
                     }
-                    result.success(setup(osz.absolutePath))
+                    handler.post(poller)
+                    Thread {
+                        val out = nativeDownloadByBid(bid, cacheDirPath)
+                        handler.post {
+                            downloading = false
+                            val logs = nativeTakeDownloadLog()
+                            try {
+                                if (out.startsWith("ERR:")) {
+                                    val detail = out.removePrefix("ERR:")
+                                    result.error("osu_download", if (logs.isNotEmpty()) "$detail\n$logs" else detail)
+                                } else {
+                                    report("下载完成，解析谱面…")
+                                    result.success(setup(out))
+                                }
+                            } catch (e: Exception) {
+                                result.error("osu_render", e.message ?: "unknown error", null)
+                            }
+                        }
+                    }.start()
                 }
                 "loadFile" -> {
                     val path = call.argument<String>("path") ?: throw IllegalArgumentException("no path")
@@ -150,56 +177,6 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             textureEntry!!.release()
             textureEntry = null
         }
-    }
-
-    private fun isZip(f: File): Boolean {
-        if (f.length() < 1024) return false
-        return f.inputStream().use { it.read() == 0x50 && it.read() == 0x4B } // "PK"
-    }
-
-    private fun downloadOsz(bid: Int, dest: File) {
-        val mirrors = listOf(
-            "https://osu.direct/api/d/$bid",
-            "https://beatconnect.io/b/$bid/",
-            "https://catboy.best/d/$bid",
-            "https://dl.sayobot.cn/beatmaps/download/osu/$bid",
-        )
-        val client = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
-        val failures = mutableListOf<String>()
-        for (m in mirrors) {
-            try {
-                report("下载中: $m")
-                val req = Request.Builder()
-                    .url(m)
-                    .header("User-Agent", "osu-preview-android/0.1")
-                    .build()
-                client.newCall(req).execute().use { resp ->
-                    val body = resp.body
-                    if (!resp.isSuccessful || body == null) {
-                        failures += "$m -> HTTP ${resp.code}"
-                        return@use
-                    }
-                    dest.outputStream().use { out ->
-                        body.byteStream().use { it.copyTo(out) }
-                    }
-                    if (isZip(dest)) {
-                        report("下载完成: $m (${dest.length()}B)")
-                        return
-                    }
-                    failures += "$m -> 返回的不是 zip (${dest.length()}B)"
-                    if (dest.exists()) dest.delete()
-                }
-            } catch (e: Exception) {
-                val cause = e.cause?.let { " / cause=${it.javaClass.simpleName}:${it.message}" } ?: ""
-                failures += "$m -> ${e.javaClass.simpleName}: ${e.message}$cause"
-            }
-        }
-        throw RuntimeException("所有镜像下载失败: ${failures.joinToString(" | ")}")
     }
 
     /** 下载/解析过程实时上报到 Dart 侧（method channel 反向调用）。 */

@@ -9,3 +9,8 @@ license = "MIT"
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 log = "0.4"
+# 下载器（原 root 包 src/pipeline/downloader 迁入）用 ureq 做 HTTP：
+# 多镜像竞速 + Cloudflare 优选 IP 直连（自定义 Resolver）。
+ureq = "2"
+# 下载器 valid_osz 校验（zip 魔数）与测试夹具。
+zip = { version = "2.4", default-features = false, features = ["deflate"] }

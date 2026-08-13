@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """CI 助手：给 flutter create 生成的 android 工程注入本项目的依赖和权限。
 
-- build.gradle.kts: media3-exoplayer（音频主时钟）+ okhttp（下载 .osz）
+- build.gradle.kts: media3-exoplayer（音频主时钟）
 - AndroidManifest.xml: INTERNET 权限（release 包下载谱面需要）
+
+谱面下载由 Rust 侧智能下载器（osu-beatmap-core::pipeline::downloader）完成，
+无需在 Kotlin 层注入 HTTP 客户端依赖。
 """
 import pathlib
 import re
@@ -14,7 +17,6 @@ manifest = root / "app" / "android" / "app" / "src" / "main" / "AndroidManifest.
 
 DEPS = '''dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 '''
 
