@@ -12,7 +12,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use raw_window_handle::{AndroidNdkWindowHandle, RawWindowHandle};
+use raw_window_handle::{AndroidNdkWindowHandle, DisplayHandle, RawWindowHandle};
+
+/// Android 的所有权式 display 句柄。raw_window_handle 自带的
+/// `DisplayHandle` 是 borrowed 且内部含 NonNull（非 Send/Sync），
+/// 而 wgpu 的 `InstanceDescriptor::display` 要求 Send + Sync + 'static。
+#[derive(Debug, Clone, Copy)]
+struct OwnedAndroidDisplay;
+
+impl raw_window_handle::HasDisplayHandle for OwnedAndroidDisplay {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        Ok(DisplayHandle::android())
+    }
+}
 
 use crate::modes::{BeatmapState, load_beatmap_state};
 use crate::{is_paused, render_time, speed};
@@ -100,7 +114,14 @@ pub(crate) fn surface_destroyed() {
 
 fn init_renderer(window: *mut c_void) -> Result<(), String> {
     crate::push_download_log("render: 创建 wgpu 实例…".to_string());
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    // Android 上 wgpu 要求实例带 DisplayHandle 才能建 surface
+    // （GLES 的 EGL display 用默认值即可，Android 句柄本身是空的）。
+    // 默认 backends=PRIMARY 不含 GL，这里显式把 Vulkan+GLES 都打开。
+    let mut desc = wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
+        OwnedAndroidDisplay,
+    ));
+    desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+    let instance = wgpu::Instance::new(desc);
     let raw = RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(
         NonNull::new(window as *mut std::ffi::c_void).ok_or("null ANativeWindow")?,
     ));
