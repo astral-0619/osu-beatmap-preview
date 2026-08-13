@@ -15,6 +15,7 @@ import io.flutter.view.TextureRegistry
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Flutter 侧插件：Flutter Texture 上挂 wgpu 渲染，ExoPlayer 只播音频当主时钟。
@@ -75,7 +76,12 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     val bid = (call.argument<Number>("bid") ?: throw IllegalArgumentException("no bid")).toInt()
                     val dir = File(context.cacheDir, "beatmaps").apply { mkdirs() }
                     val osz = File(dir, "$bid.osz")
-                    if (!osz.exists() || !isZip(osz)) downloadOsz(bid, osz)
+                    if (!osz.exists() || !isZip(osz)) {
+                        report("开始下载 bid=$bid …")
+                        downloadOsz(bid, osz)
+                    } else {
+                        report("命中缓存: ${osz.name}")
+                    }
                     result.success(setup(osz.absolutePath))
                 }
                 "loadFile" -> {
@@ -156,31 +162,52 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "https://osu.direct/api/d/$bid",
             "https://beatconnect.io/b/$bid/",
             "https://catboy.best/d/$bid",
+            "https://dl.sayobot.cn/beatmaps/download/osu/$bid",
         )
-        var lastError: Exception? = null
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+        val failures = mutableListOf<String>()
         for (m in mirrors) {
             try {
+                report("下载中: $m")
                 val req = Request.Builder()
                     .url(m)
                     .header("User-Agent", "osu-preview-android/0.1")
                     .build()
-                OkHttpClient.Builder().followRedirects(true).build()
-                    .newCall(req).execute().use { resp ->
-                        val body = resp.body
-                        if (!resp.isSuccessful || body == null) {
-                            lastError = IllegalStateException("HTTP ${resp.code} from $m")
-                            return@use
-                        }
-                        dest.outputStream().use { out ->
-                            body.byteStream().use { it.copyTo(out) }
-                        }
-                        if (isZip(dest)) return
-                        lastError = IllegalStateException("$m did not return a zip")
+                client.newCall(req).execute().use { resp ->
+                    val body = resp.body
+                    if (!resp.isSuccessful || body == null) {
+                        failures += "$m -> HTTP ${resp.code}"
+                        return@use
                     }
+                    dest.outputStream().use { out ->
+                        body.byteStream().use { it.copyTo(out) }
+                    }
+                    if (isZip(dest)) {
+                        report("下载完成: $m (${dest.length()}B)")
+                        return
+                    }
+                    failures += "$m -> 返回的不是 zip (${dest.length()}B)"
+                    if (dest.exists()) dest.delete()
+                }
             } catch (e: Exception) {
-                lastError = e
+                val cause = e.cause?.let { " / cause=${it.javaClass.simpleName}:${it.message}" } ?: ""
+                failures += "$m -> ${e.javaClass.simpleName}: ${e.message}$cause"
             }
         }
-        throw RuntimeException("所有镜像下载失败: ${lastError?.message}", lastError)
+        throw RuntimeException("所有镜像下载失败: ${failures.joinToString(" | ")}")
+    }
+
+    /** 下载/解析过程实时上报到 Dart 侧（method channel 反向调用）。 */
+    private fun report(text: String) {
+        try {
+            channel.invokeMethod("status", mapOf("text" to text))
+        } catch (_: Exception) {
+            // Dart 侧 handler 未注册时忽略
+        }
     }
 }

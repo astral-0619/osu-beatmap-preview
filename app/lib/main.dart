@@ -42,6 +42,21 @@ class _PreviewPageState extends State<PreviewPage> {
   static const _modeNames = ['std', 'taiko', 'catch', 'mania'];
 
   @override
+  void initState() {
+    super.initState();
+    // 接收 Kotlin 侧反向推送（下载进度/错误详情）
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'status') {
+        final raw = (call.arguments as Map?)?['text'];
+        if (raw is String && mounted) {
+          setState(() => _status = raw);
+        }
+      }
+      return null;
+    });
+  }
+
+  @override
   void dispose() {
     _clockTimer?.cancel();
     _bidController.dispose();
