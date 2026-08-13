@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 osu-beatmap-core = { path = "../beatmap-core" }
 jni = "0.22"
-wgpu = { version = "30", default-features = false, features = ["gles", "vulkan"] }
+wgpu = { version = "30", default-features = false, features = ["gles", "vulkan", "wgsl"] }
 raw-window-handle = "0.6"
 parking_lot = "0.12"
 log = "0.4"

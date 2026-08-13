@@ -23,8 +23,45 @@ struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    pipeline: wgpu::RenderPipeline,
     size: (u32, u32),
 }
+
+/// 纯色 2D 着色器：NDC 顶点 + RGBA 颜色直通。
+const FLAT_SHADER: &str = r#"
+struct VsIn {
+    @location(0) pos: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+    var out: VsOut;
+    out.pos = vec4<f32>(in.pos, 0.0, 1.0);
+    out.color = in.color;
+    return out;
+}
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    return in.color;
+}
+"#;
+
+const VERTEX_ATTRIBUTES: &[wgpu::VertexAttribute] = &[
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x4,
+        offset: 8,
+        shader_location: 1,
+    },
+];
 
 static RENDERER: Mutex<Option<Renderer>> = Mutex::new(None);
 static STATE: Mutex<Option<Arc<BeatmapState>>> = Mutex::new(None);
@@ -120,7 +157,48 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
         color_space: wgpu::SurfaceColorSpace::Auto,
     };
     surface.configure(&device, &config);
-    *RENDERER.lock() = Some(Renderer { surface, device, queue, config, size: (720, 1280) });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("flat-color"),
+        source: wgpu::ShaderSource::Wgsl(FLAT_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("flat"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: VERTEX_ATTRIBUTES,
+            })],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    *RENDERER.lock() = Some(Renderer { surface, device, queue, config, pipeline, size: (720, 1280) });
     crate::push_download_log(format!("render: 设备就绪 ({:?} 格式)", format));
     Ok(())
 }
@@ -158,7 +236,7 @@ fn render_loop() {
                         crate::push_download_log(format!("render: 首帧输出 {w}x{h}"));
                     }
                     let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                    render_one(&r.device, &r.queue, &view, w, h);
+                    render_one(&r.device, &r.queue, &view, w, h, &r.pipeline);
                     r.queue.present(frame);
                     (w, h)
                 }
@@ -183,7 +261,7 @@ fn render_loop() {
     }
 }
 
-fn render_one(device: &wgpu::Device, queue: &wgpu::Queue, view: &wgpu::TextureView, w: u32, h: u32) {
+fn render_one(device: &wgpu::Device, queue: &wgpu::Queue, view: &wgpu::TextureView, w: u32, h: u32, pipeline: &wgpu::RenderPipeline) {
     // build vertices for the current frame
     let mut batcher = ShapeBatcher::new(w as f32, h as f32);
     let t_ms = render_time();
@@ -204,7 +282,9 @@ fn render_one(device: &wgpu::Device, queue: &wgpu::Queue, view: &wgpu::TextureVi
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.035, g: 0.035, b: 0.05, a: 1.0 }),
+                    // 深灰蓝底，明显区别于「Texture 全黑」——用于肉眼区分
+                    // 渲染器存活（有清屏）与渲染器死了（纯黑）。
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.10, g: 0.10, b: 0.14, a: 1.0 }),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -221,6 +301,7 @@ fn render_one(device: &wgpu::Device, queue: &wgpu::Queue, view: &wgpu::TextureVi
                 mapped_at_creation: false,
             });
             queue.write_buffer(&vbo, 0, bytemuck::cast_slice(&vertices));
+            pass.set_pipeline(pipeline);
             pass.set_vertex_buffer(0, vbo.slice(..));
             pass.draw(0..vertices.len() as u32, 0..1);
         }

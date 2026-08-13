@@ -38,18 +38,29 @@ class _PreviewPageState extends State<PreviewPage> {
   String _status = '输入谱面 bid（比如 450410）然后点加载';
   bool _loading = false;
   Timer? _clockTimer;
+  final List<String> _logs = [];
 
   static const _modeNames = ['std', 'taiko', 'catch', 'mania'];
 
   @override
   void initState() {
     super.initState();
-    // 接收 Kotlin 侧反向推送（下载进度/错误详情）
+    // 接收 Kotlin 侧反向推送（下载进度/渲染诊断/错误详情）
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'status') {
         final raw = (call.arguments as Map?)?['text'];
         if (raw is String && mounted) {
-          setState(() => _status = raw);
+          setState(() {
+            for (final rawLine in raw.split('\n')) {
+              if (rawLine.trim().isEmpty) continue;
+              final line =
+                  rawLine.length > 80 ? rawLine.substring(0, 80) : rawLine;
+              _logs.add(line);
+            }
+            while (_logs.length > 14) {
+              _logs.removeAt(0);
+            }
+          });
         }
       }
       return null;
@@ -72,6 +83,7 @@ class _PreviewPageState extends State<PreviewPage> {
     setState(() {
       _loading = true;
       _status = '下载并解析中…';
+      _logs.clear();
     });
     try {
       final result = await _channel.invokeMapMethod<String, dynamic>(
@@ -156,6 +168,22 @@ class _PreviewPageState extends State<PreviewPage> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Column(
               children: [
+                if (_logs.isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _logs.join('\n'),
+                      style: const TextStyle(
+                          fontSize: 10, fontFamily: 'monospace'),
+                      maxLines: 8,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 Text(_status, style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
                 Row(
