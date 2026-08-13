@@ -72,8 +72,6 @@ struct Shared {
     paused: AtomicBool,
     /// Selected game mode (0=standard,1=taiko,2=catch,3=mania).
     mode: AtomicU32,
-    /// Current playback speed multiplier x100 (e.g. 100 = 1.0x).
-    speed_x100: AtomicU32,
 }
 
 static SHARED: Mutex<Option<Arc<Shared>>> = Mutex::new(None);
@@ -86,7 +84,6 @@ fn shared() -> Arc<Shared> {
             audio_time_ms: AtomicI64::new(0),
             paused: AtomicBool::new(true),
             mode: AtomicU32::new(0),
-            speed_x100: AtomicU32::new(100),
         }));
     }
     Arc::clone(g.as_ref().unwrap())
@@ -171,15 +168,6 @@ pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeSetMode<'
     mode: jint,
 ) {
     shared().mode.store(mode.clamp(0, 3) as u32, Ordering::Relaxed);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeSetSpeed<'frame>(
-    _env: EnvUnowned<'frame>,
-    _class: JClass<'frame>,
-    speed_x100: jint,
-) {
-    shared().speed_x100.store(speed_x100.max(25) as u32, Ordering::Relaxed);
 }
 
 /// 下载谱面集（智能下载：多镜像竞速 + Cloudflare 优选 IP，逻辑来自
@@ -315,8 +303,4 @@ pub(crate) fn current_mode() -> Mode {
 
 pub(crate) fn is_paused() -> bool {
     shared().paused.load(Ordering::Relaxed)
-}
-
-pub(crate) fn speed() -> f64 {
-    (shared().speed_x100.load(Ordering::Relaxed) as f64) / 100.0
 }

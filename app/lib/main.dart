@@ -32,8 +32,6 @@ class _PreviewPageState extends State<PreviewPage> {
 
   final _bidController = TextEditingController();
   int? _textureId;
-  int _mode = 0;
-  double _speed = 1.0;
   bool _playing = false;
   String _status = '输入谱面 bid（比如 450410）然后点加载';
   bool _loading = false;
@@ -41,8 +39,10 @@ class _PreviewPageState extends State<PreviewPage> {
   final List<String> _logs = [];
   // 交换链真实宽高比（出首帧后从 Rust 侧取），Texture 控件按它显示防止拉伸。
   double? _frameAspect;
-
-  static const _modeNames = ['std', 'taiko', 'catch', 'mania'];
+  // 播放进度（进度条）
+  int _positionMs = 0;
+  int _durationMs = 0;
+  bool _seeking = false;
 
   @override
   void initState() {
@@ -94,6 +94,8 @@ class _PreviewPageState extends State<PreviewPage> {
       setState(() {
         _textureId = result['textureId'] as int;
         _playing = true;
+        _positionMs = 0;
+        _durationMs = (result['durationMs'] as num?)?.toInt() ?? 0;
         _status = '已加载，音频由 ExoPlayer 播，画面由 Rust wgpu 画（bid=$bid）';
         _frameAspect = null;
       });
@@ -130,10 +132,17 @@ class _PreviewPageState extends State<PreviewPage> {
     _clockTimer?.cancel();
     _clockTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
       try {
+        if (_durationMs <= 0) {
+          final d = await _channel.invokeMethod<int>('durationMs');
+          if (mounted && d != null && d > 0) {
+            setState(() => _durationMs = d);
+          }
+        }
         final t = await _channel.invokeMethod<int>('positionMs');
         if (mounted && t != null) {
-          setState(() => _status =
-              '${(t ~/ 60000).toString().padLeft(2, '0')}:${((t ~/ 1000) % 60).toString().padLeft(2, '0')} / $_modeNames[$_mode] / ${_speed.toStringAsFixed(2)}x');
+          setState(() {
+            if (!_seeking) _positionMs = t;
+          });
         }
       } catch (_) {
         // channel calls before load are fine to ignore
@@ -141,10 +150,30 @@ class _PreviewPageState extends State<PreviewPage> {
     });
   }
 
-  Future<void> _invoke(String method, [dynamic args]) async {
+  Future<void> _togglePlay() async {
+    final next = !_playing;
+    setState(() => _playing = next);
     try {
-      await _channel.invokeMethod(method, args);
+      await _channel.invokeMethod(next ? 'play' : 'pause');
     } catch (_) {}
+  }
+
+  Future<void> _seek(double value) async {
+    final ms = value.round().clamp(0, _durationMs > 0 ? _durationMs : 0);
+    setState(() {
+      _positionMs = ms;
+      _seeking = true;
+    });
+    try {
+      await _channel.invokeMethod('seekTo', {'ms': ms});
+    } catch (_) {}
+    setState(() => _seeking = false);
+  }
+
+  static String _fmt(int ms) {
+    final m = ms ~/ 60000;
+    final s = (ms ~/ 1000) % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -181,7 +210,7 @@ class _PreviewPageState extends State<PreviewPage> {
               child: _textureId == null
                   ? Text(_status, textAlign: TextAlign.center)
                   : AspectRatio(
-                      aspectRatio: _frameAspect ?? 4 / 3,
+                      aspectRatio: _frameAspect ?? 16 / 9,
                       child: Texture(textureId: _textureId!),
                     ),
             ),
@@ -202,51 +231,32 @@ class _PreviewPageState extends State<PreviewPage> {
                       _logs.join('\n'),
                       style: const TextStyle(
                           fontSize: 10, fontFamily: 'monospace'),
-                      maxLines: 8,
+                      maxLines: 6,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                Text(_status, style: const TextStyle(fontSize: 12)),
-                const SizedBox(height: 8),
+                // 基本播放器：播放/暂停 + 可拖动进度条
                 Row(
                   children: [
                     IconButton(
                       icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
-                      onPressed: () {
-                        _playing = !_playing;
-                        _invoke(_playing ? 'play' : 'pause');
-                        setState(() {});
-                      },
+                      onPressed: _textureId == null ? null : _togglePlay,
                     ),
-                    const Spacer(),
-                    DropdownButton<int>(
-                      value: _mode,
-                      items: List.generate(
-                          4,
-                          (i) => DropdownMenuItem(
-                              value: i, child: Text(_modeNames[i]))),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _mode = v);
-                        _invoke('setMode', v);
-                      },
-                    ),
-                    const Spacer(),
-                    Text('${_speed.toStringAsFixed(2)}x'),
-                    SizedBox(
-                      width: 140,
+                    Text(_fmt(_positionMs), style: const TextStyle(fontSize: 12)),
+                    Expanded(
                       child: Slider(
-                        value: _speed,
-                        min: 0.5,
-                        max: 1.5,
-                        onChanged: (v) {
-                          setState(() => _speed = v);
-                          _invoke('setSpeed', (v * 100).round());
-                        },
+                        value: _durationMs > 0
+                            ? _positionMs.clamp(0, _durationMs).toDouble()
+                            : 0,
+                        max: _durationMs > 0 ? _durationMs.toDouble() : 1,
+                        onChanged: _textureId == null ? null : _seek,
                       ),
                     ),
+                    Text(_fmt(_durationMs), style: const TextStyle(fontSize: 12)),
                   ],
                 ),
+                Text(_status, style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 8),
               ],
             ),
           ),

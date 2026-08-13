@@ -3,16 +3,28 @@
 //! All game visuals are drawn as flat colored triangles in NDC space
 //! (y-up), batched into one vertex buffer per frame and submitted with a
 //! single alpha-blended pipeline.
+//!
+//! Premultiplied-alpha contract: Android's SurfaceTexture compositor treats
+//! every frame as premultiplied, so the fragment shader premultiplies RGB by
+//! alpha and blending is `PREMULTIPLIED_ALPHA_BLENDING`. Writing straight
+//! alpha produces the classic washed-out/whitened look on semi-transparent
+//! pixels (the "note 中间全是白色" bug).
 
 use parking_lot::Mutex;
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
 
 use raw_window_handle::{AndroidNdkWindowHandle, DisplayHandle, RawWindowHandle};
+
+/// 输出交换链固定 16:9 横屏（谱面画布 4:3 居中信箱），与 Kotlin 侧
+/// `setDefaultBufferSize(1280, 720)` 保持一致。之前写 720x1280 是竖屏
+/// 规格，导致画面比例错。
+pub const SURFACE_WIDTH: u32 = 1280;
+pub const SURFACE_HEIGHT: u32 = 720;
 
 /// Android 的所有权式 display 句柄。raw_window_handle 自带的
 /// `DisplayHandle` 是 borrowed 且内部含 NonNull（非 Send/Sync），
@@ -29,7 +41,7 @@ impl raw_window_handle::HasDisplayHandle for OwnedAndroidDisplay {
 }
 
 use crate::modes::{BeatmapState, load_beatmap_state};
-use crate::{is_paused, render_time, speed};
+use crate::{is_paused, render_time};
 
 // ---------------- global renderer state ----------------
 struct Renderer {
@@ -41,7 +53,20 @@ struct Renderer {
     size: (u32, u32),
 }
 
-/// 纯色 2D 着色器：NDC 顶点 + RGBA 颜色直通。
+/// Process-wide device handles. wgpu on Android does not tolerate multiple
+/// instances / adapters well, and recreating them per load was the reason a
+/// second render of another beatmap died. Created once, reused by every
+/// surface incarnation.
+struct CoreDevice {
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+static CORE: OnceLock<CoreDevice> = OnceLock::new();
+
+/// 纯色 2D 着色器：NDC 顶点 + RGBA 颜色直通（输出预乘 alpha）。
 const FLAT_SHADER: &str = r#"
 struct VsIn {
     @location(0) pos: vec2<f32>,
@@ -60,7 +85,7 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    return in.color;
+    return vec4<f32>(in.color.rgb * in.color.a, in.color.a);
 }
 "#;
 
@@ -98,7 +123,7 @@ pub(crate) fn surface_created(window: *mut c_void) {
         crate::push_download_log(format!("render: 初始化失败: {e}"));
         return;
     }
-    // (re)start render loop
+    // (re)start render loop — a fresh thread per surface incarnation.
     let mut t = THREAD.lock();
     if t.is_none() {
         STOP.store(false, Ordering::Release);
@@ -106,14 +131,24 @@ pub(crate) fn surface_created(window: *mut c_void) {
     }
 }
 
-/// Kotlin -> nativeSurfaceDestroyed(). Stops rendering.
+/// Kotlin -> nativeSurfaceDestroyed(). Stops the render thread, joins it and
+/// drops the surface so the next `surface_created` gets a clean slate (this
+/// was the "渲染后再次渲染谱面不能用" bug: the old thread handle was never
+/// reset, so a second load never restarted rendering).
 pub(crate) fn surface_destroyed() {
     STOP.store(true, Ordering::Release);
+    let mut t = THREAD.lock();
+    if let Some(handle) = t.take() {
+        // Render loop wakes at 16ms intervals; a short join is safe.
+        let _ = handle.join();
+    }
     *RENDERER.lock() = None;
 }
 
-fn init_renderer(window: *mut c_void) -> Result<(), String> {
-    crate::push_download_log("render: 创建 wgpu 实例…".to_string());
+fn core_device() -> Result<&'static CoreDevice, String> {
+    if let Some(core) = CORE.get() {
+        return Ok(core);
+    }
     // Android 上 wgpu 要求实例带 DisplayHandle 才能建 surface
     // （GLES 的 EGL display 用默认值即可，Android 句柄本身是空的）。
     // 默认 backends=PRIMARY 不含 GL，这里显式把 Vulkan+GLES 都打开。
@@ -122,21 +157,9 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
     ));
     desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
     let instance = wgpu::Instance::new(desc);
-    let raw = RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(
-        NonNull::new(window as *mut std::ffi::c_void).ok_or("null ANativeWindow")?,
-    ));
-    let surface = unsafe {
-        instance
-            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: None,
-                raw_window_handle: raw,
-            })
-            .map_err(|e| format!("create_surface: {e}"))?
-    };
-    crate::push_download_log("render: surface 创建成功".to_string());
     let adapter = pollster_block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
-        compatible_surface: Some(&surface),
+        compatible_surface: None,
         force_fallback_adapter: false,
         apply_limit_buckets: false,
     }))
@@ -157,8 +180,31 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
         },
     ))
     .map_err(|e| format!("request_device: {e}"))?;
+    let _ = CORE.set(CoreDevice {
+        instance,
+        adapter,
+        device,
+        queue,
+    });
+    Ok(CORE.get().ok_or("core device init race")?)
+}
 
-    let caps = surface.get_capabilities(&adapter);
+fn init_renderer(window: *mut c_void) -> Result<(), String> {
+    crate::push_download_log("render: 创建 surface…".to_string());
+    let core = core_device()?;
+    let raw = RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(
+        NonNull::new(window as *mut std::ffi::c_void).ok_or("null ANativeWindow")?,
+    ));
+    let surface = unsafe {
+        core.instance
+            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: None,
+                raw_window_handle: raw,
+            })
+            .map_err(|e| format!("create_surface: {e}"))?
+    };
+    crate::push_download_log("render: surface 创建成功".to_string());
+    let caps = surface.get_capabilities(&core.adapter);
     // 颜色按 sRGB 空间直接给（2D 绘画惯例），优先选非 sRGB 格式，
     // 避免 wgpu 把线性值写进 sRGB 交换链导致整体发灰发亮。
     let format = caps
@@ -172,25 +218,25 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
-        width: 720,
-        height: 1280,
+        width: SURFACE_WIDTH,
+        height: SURFACE_HEIGHT,
         present_mode: wgpu::PresentMode::Fifo,
         alpha_mode: caps.alpha_modes[0],
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
         color_space: wgpu::SurfaceColorSpace::Auto,
     };
-    surface.configure(&device, &config);
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    surface.configure(&core.device, &config);
+    let shader = core.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("flat-color"),
         source: wgpu::ShaderSource::Wgsl(FLAT_SHADER.into()),
     });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let pipeline_layout = core.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[],
         immediate_size: 0,
     });
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let pipeline = core.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("flat"),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
@@ -209,7 +255,8 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                // 预乘 alpha：shader 输出已预乘，Android 合成器按预乘消费。
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -222,8 +269,15 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
         multiview_mask: None,
         cache: None,
     });
-    *RENDERER.lock() = Some(Renderer { surface, device, queue, config, pipeline, size: (720, 1280) });
-    crate::push_download_log(format!("render: 设备就绪 ({:?} 格式)", format));
+    *RENDERER.lock() = Some(Renderer {
+        surface,
+        device: core.device.clone(),
+        queue: core.queue.clone(),
+        config,
+        pipeline,
+        size: (SURFACE_WIDTH, SURFACE_HEIGHT),
+    });
+    crate::push_download_log(format!("render: 设备就绪 ({:?} 格式, {}x{})", format, SURFACE_WIDTH, SURFACE_HEIGHT));
     Ok(())
 }
 
@@ -297,8 +351,7 @@ fn render_one(device: &wgpu::Device, queue: &wgpu::Queue, view: &wgpu::TextureVi
     let state = STATE.lock();
     if let Some(state) = state.as_ref() {
         let paused = is_paused();
-        let spd = speed();
-        crate::modes::draw_frame(&mut batcher, state, t_ms, (w as f32, h as f32), paused, spd);
+        crate::modes::draw_frame(&mut batcher, state, t_ms, (w as f32, h as f32), paused, 1.0);
     }
     let vertices = batcher.vertices;
 
@@ -412,7 +465,9 @@ impl ShapeBatcher {
         }
     }
 
-    /// thick polyline with round-ish joins (quads per segment)
+    /// thick polyline with round caps and round joins (quads per segment +
+    /// a filled circle at every point, so slider bodies read as one smooth
+    /// tube instead of disjoint rectangles).
     pub(crate) fn polyline(&mut self, pts: &[(f32, f32)], width: f32, color: [f32; 4]) {
         let half = width / 2.0;
         for w in pts.windows(2) {
@@ -428,6 +483,18 @@ impl ShapeBatcher {
             let p3 = (b.0 - nx, b.1 - ny);
             self.tri(p0, p1, p3, color);
             self.tri(p0, p3, p2, color);
+        }
+        // Round caps + joins: a disc at every vertex fuses the quads.
+        let segs = 16usize;
+        for &(px, py) in pts {
+            let seg = segs.max(8);
+            for i in 0..seg {
+                let a0 = i as f32 / seg as f32 * std::f32::consts::TAU;
+                let a1 = (i + 1) as f32 / seg as f32 * std::f32::consts::TAU;
+                let p0 = (px + half * a0.cos(), py + half * a0.sin());
+                let p1 = (px + half * a1.cos(), py + half * a1.sin());
+                self.tri((px, py), p0, p1, color);
+            }
         }
     }
 }

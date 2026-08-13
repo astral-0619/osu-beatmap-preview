@@ -6,7 +6,6 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -54,7 +53,6 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private external fun nativeSetAudioTimeMs(positionMs: Long)
     private external fun nativeSetPaused(paused: Boolean)
     private external fun nativeSetMode(mode: Int)
-    private external fun nativeSetSpeed(speedX100: Int)
     // 智能下载（Rust 侧，与原 osu-beatmap-preview 下载器同一套逻辑）：
     // 返回本地 .osz 路径，失败返回 "ERR:<详情>"。
     private external fun nativeDownloadByBid(bid: Int, cacheDir: String): String
@@ -132,13 +130,8 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     val mode = (call.argument<Number>("mode") ?: 0).toInt().coerceIn(0, 3)
                     nativeSetMode(mode); result.success(null)
                 }
-                "setSpeed" -> {
-                    val x100 = (call.argument<Number>("speedX100") ?: 100).toInt().coerceIn(25, 400)
-                    val speed = x100 / 100f
-                    player?.setPlaybackParameters(PlaybackParameters(speed))
-                    nativeSetSpeed(x100); result.success(null)
-                }
                 "positionMs" -> result.success(player?.currentPosition ?: 0L)
+                "durationMs" -> result.success(player?.duration?.takeIf { it > 0 } ?: 0L)
                 "frameSize" -> {
                     val v = nativeGetFrameSize()
                     result.success(listOf((v shr 32).toInt(), (v and 0xFFFFFFFFL).toInt()))
@@ -156,6 +149,9 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         teardown()
         val entry = textureRegistry.createSurfaceTexture()
         textureEntry = entry
+        // 横屏 16:9 渲染缓冲，与 Rust 侧 SURFACE_WIDTH/HEIGHT 一致。
+        // 不设的话 SurfaceTexture 默认 1x1，交换链尺寸全错（竖屏画面根因）。
+        entry.surfaceTexture().setDefaultBufferSize(1280, 720)
         val surface = Surface(entry.surfaceTexture())
         nativeSurfaceCreated(surface)
 
