@@ -30,6 +30,7 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private var textureEntry: TextureRegistry.SurfaceTextureEntry? = null
     private var player: ExoPlayer? = null
     private var downloading = false
+    private var logPollDeadline = 0L
     private val handler = Handler(Looper.getMainLooper())
 
     private val clockPoller = object : Runnable {
@@ -49,7 +50,7 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     // Java_io_github_astral_osu_OsuRenderPlugin_*，与 Rust 侧一致。
     private external fun nativeSurfaceCreated(surface: Surface)
     private external fun nativeSurfaceDestroyed()
-    private external fun nativeLoadBeatmap(path: String): String
+    private external fun nativeLoadBeatmap(path: String, workDir: String): String
     private external fun nativeSetAudioTimeMs(positionMs: Long)
     private external fun nativeSetPaused(paused: Boolean)
     private external fun nativeSetMode(mode: Int)
@@ -82,10 +83,11 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     // 后台线程执行，期间轮询把下载日志实时上屏。
                     report("智能下载中（多镜像竞速）…")
                     downloading = true
+                    logPollDeadline = System.currentTimeMillis() + 15 * 60_000
                     val cacheDirPath = dir.absolutePath
                     val poller = object : Runnable {
                         override fun run() {
-                            if (!downloading) return
+                            if (System.currentTimeMillis() > logPollDeadline) return
                             val logs = nativeTakeDownloadLog()
                             if (logs.isNotEmpty()) report(logs)
                             handler.postDelayed(this, 500)
@@ -101,12 +103,14 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                                 if (out.startsWith("ERR:")) {
                                     val detail = out.removePrefix("ERR:")
                                     val msg = if (logs.isNotEmpty()) "$detail\n$logs" else detail
+                                    logPollDeadline = 0
                                     result.error("osu_download", msg, null)
                                 } else {
                                     report("下载完成，解析谱面…")
                                     result.success(setup(out))
                                 }
                             } catch (e: Exception) {
+                                logPollDeadline = 0
                                 result.error("osu_render", e.message ?: "unknown error", null)
                             }
                         }
@@ -149,13 +153,23 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val surface = Surface(entry.surfaceTexture())
         nativeSurfaceCreated(surface)
 
-        val audioPath = nativeLoadBeatmap(oszPath)
+        val audioPath = nativeLoadBeatmap(oszPath, context.cacheDir.absolutePath)
+        if (audioPath.isEmpty() || audioPath.startsWith("ERR:")) {
+            val logs = nativeTakeDownloadLog()
+            teardown()
+            throw IllegalStateException(
+                "谱面解析失败：$audioPath" + if (logs.isNotEmpty()) "\n$logs" else ""
+            )
+        }
         val p = ExoPlayer.Builder(context).build()
         p.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(audioPath))))
         p.prepare()
         p.playWhenReady = true
         player = p
         handler.post(clockPoller)
+        // 渲染器初始化的日志晚于 load 返回才产生（渲染线程首帧等），
+        // 延长轮询窗口把它们带上屏。
+        logPollDeadline = System.currentTimeMillis() + 10_000
         return mapOf(
             "textureId" to entry.id(),
             "audioPath" to audioPath,

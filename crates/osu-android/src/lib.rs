@@ -27,7 +27,7 @@ static DOWNLOAD_LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 const DOWNLOAD_LOG_CAP: usize = 300;
 
-fn push_download_log(line: String) {
+pub(crate) fn push_download_log(line: String) {
     let mut v = DOWNLOAD_LOG.lock();
     if v.len() < DOWNLOAD_LOG_CAP {
         v.push(line);
@@ -246,21 +246,26 @@ pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeTakeDownl
 }
 
 /// Load a beatmap file (`.osu` or `.osz`). On success returns the audio
-/// file path (for ExoPlayer) as a Java string.
+/// file path (for ExoPlayer) as a Java string; on failure `ERR:<原因>`.
+/// `work_dir` must be an app-writable dir (Android 的 temp_dir 不可写),
+/// used for osz extraction.
 #[no_mangle]
 pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeLoadBeatmap<'frame>(
     mut env: EnvUnowned<'frame>,
     _class: JClass<'frame>,
     path: jni::objects::JString<'frame>,
+    work_dir: jni::objects::JString<'frame>,
 ) -> jni::objects::JString<'frame> {
     let outcome = env.with_env(|env: &mut jni::Env<'frame>| -> jni::errors::Result<jni::objects::JString<'frame>> {
         let path: String = path.try_to_string(env)?;
-        let result = renderer::load_beatmap(&path);
+        let dir: String = work_dir.try_to_string(env)?;
+        let result = renderer::load_beatmap(&path, &PathBuf::from(&dir));
         match result {
             Ok(audio_path) => env.new_string(audio_path),
             Err(e) => {
                 log::error!("load_beatmap failed: {e}");
-                env.new_string("")
+                push_download_log(format!("load: 失败: {e}"));
+                env.new_string(format!("ERR:{e}"))
             }
         }
     });

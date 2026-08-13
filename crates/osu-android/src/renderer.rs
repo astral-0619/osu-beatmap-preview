@@ -39,10 +39,12 @@ pub(crate) fn set_state(state: Option<Arc<BeatmapState>>) {
 /// the ANativeWindow and starts the render thread.
 pub(crate) fn surface_created(window: *mut c_void) {
     if window.is_null() {
+        crate::push_download_log("render: ANativeWindow 为空".to_string());
         return;
     }
     if let Err(e) = init_renderer(window) {
         log::error!("renderer init failed: {e}");
+        crate::push_download_log(format!("render: 初始化失败: {e}"));
         return;
     }
     // (re)start render loop
@@ -60,6 +62,7 @@ pub(crate) fn surface_destroyed() {
 }
 
 fn init_renderer(window: *mut c_void) -> Result<(), String> {
+    crate::push_download_log("render: 创建 wgpu 实例…".to_string());
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let raw = RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(
         NonNull::new(window as *mut std::ffi::c_void).ok_or("null ANativeWindow")?,
@@ -72,6 +75,7 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
             })
             .map_err(|e| format!("create_surface: {e}"))?
     };
+    crate::push_download_log("render: surface 创建成功".to_string());
     let adapter = pollster_block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: Some(&surface),
@@ -79,6 +83,11 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
         apply_limit_buckets: false,
     }))
     .map_err(|e| format!("request_adapter: {e}"))?;
+    let info = adapter.get_info();
+    crate::push_download_log(format!(
+        "render: adapter {} ({:?}, {:?})",
+        info.name, info.backend, info.device_type
+    ));
     let (device, queue) = pollster_block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
             label: Some("osu-android"),
@@ -112,6 +121,7 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
     };
     surface.configure(&device, &config);
     *RENDERER.lock() = Some(Renderer { surface, device, queue, config, size: (720, 1280) });
+    crate::push_download_log(format!("render: 设备就绪 ({:?} 格式)", format));
     Ok(())
 }
 
@@ -136,18 +146,24 @@ fn pollster_block_on<F: std::future::Future>(fut: F) -> F::Output {
 }
 
 fn render_loop() {
+    let mut first_frame_logged = false;
     while !STOP.load(Ordering::Acquire) {
         if let Some(r) = RENDERER.lock().as_mut() {
             let (w, h) = match r.surface.get_current_texture() {
                 wgpu::CurrentSurfaceTexture::Success(frame)
                 | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                     let (w, h) = (frame.texture.width(), frame.texture.height());
+                    if !first_frame_logged {
+                        first_frame_logged = true;
+                        crate::push_download_log(format!("render: 首帧输出 {w}x{h}"));
+                    }
                     let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
                     render_one(&r.device, &r.queue, &view, w, h);
                     r.queue.present(frame);
                     (w, h)
                 }
                 wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                    crate::push_download_log("render: surface 过期，重配置".to_string());
                     r.surface.configure(&r.device, &r.config);
                     r.size
                 }
@@ -156,6 +172,7 @@ fn render_loop() {
                 }
                 wgpu::CurrentSurfaceTexture::Validation => {
                     log::warn!("surface validation error; skipping frame");
+                    crate::push_download_log("render: surface 校验错误，跳过帧".to_string());
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     r.size
                 }
@@ -306,24 +323,35 @@ impl ShapeBatcher {
 }
 
 // ---------------- beatmap loading ----------------
-pub(crate) fn load_beatmap(path: &str) -> Result<String, String> {
+pub(crate) fn load_beatmap(path: &str, work_dir: &Path) -> Result<String, String> {
     let p = Path::new(path);
+    crate::push_download_log(format!("load: 开始解析 {}", p.file_name().and_then(|n| n.to_str()).unwrap_or("?")));
     if p.extension().and_then(|e| e.to_str()) == Some("osz") {
-        load_from_osz(p)
+        load_from_osz(p, work_dir)
     } else {
         // .osu file: audio is a sibling file
-        let state = load_beatmap_state(p)?;
+        let state = load_beatmap_state(p).map_err(|e| format!("parse osu: {e}"))?;
         let audio = audio_path_next_to(p, state.audio_filename.as_deref().unwrap_or("audio.mp3"));
+        if !audio.exists() {
+            crate::push_download_log(format!("load: 音频文件不存在: {}", audio.display()));
+        }
         set_state(Some(Arc::new(state)));
+        crate::push_download_log("load: 解析完成（单文件）".to_string());
         Ok(audio.to_string_lossy().into_owned())
     }
 }
 
-fn load_from_osz(p: &Path) -> Result<String, String> {
+fn load_from_osz(p: &Path, work_dir: &Path) -> Result<String, String> {
     let file = std::fs::File::open(p).map_err(|e| format!("open osz: {e}"))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("zip: {e}"))?;
-    let out_dir = std::env::temp_dir().join("osu-android-maps");
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    // Android 的 temp_dir() = /data/local/tmp 对应用不可写，必须用
+    // Kotlin 传入的 app cache 目录。
+    let out_dir = work_dir.join("osu-android-maps");
+    if out_dir.exists() {
+        let _ = std::fs::remove_dir_all(&out_dir);
+    }
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("create extract dir: {e}"))?;
+    crate::push_download_log(format!("load: 解压到 {}", out_dir.display()));
     let mut osu_path: Option<PathBuf> = None;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
@@ -343,10 +371,46 @@ fn load_from_osz(p: &Path) -> Result<String, String> {
         }
     }
     let osu_path = osu_path.ok_or("no .osu in archive")?;
-    let state = load_beatmap_state(&osu_path)?;
-    let audio = audio_path_next_to(&osu_path, state.audio_filename.as_deref().unwrap_or("audio.mp3"));
+    let state = load_beatmap_state(&osu_path).map_err(|e| format!("parse osu: {e}"))?;
+    let audio_name = state.audio_filename.as_deref().unwrap_or("audio.mp3");
+    let audio = resolve_audio(&osu_path, &out_dir, audio_name);
+    if !audio.exists() {
+        crate::push_download_log(format!("load: 音频文件不存在: {}", audio.display()));
+    }
+    crate::push_download_log(format!(
+        "load: 解析完成，{} 个物件",
+        state.standard.len()
+    ));
     set_state(Some(Arc::new(state)));
     Ok(audio.to_string_lossy().into_owned())
+}
+
+/// 先看 .osu 同级目录，找不到再按文件名在解压目录里递归找
+/// （部分谱面把音频放在子文件夹里）。
+fn resolve_audio(osu: &Path, out_dir: &Path, audio_filename: &str) -> PathBuf {
+    let sibling = audio_path_next_to(osu, audio_filename);
+    if sibling.exists() {
+        return sibling;
+    }
+    let base = Path::new(audio_filename)
+        .file_name()
+        .map(|b| b.to_string_lossy().into_owned())
+        .unwrap_or_else(|| audio_filename.to_string());
+    fn walk(dir: &Path, base: &str) -> Option<PathBuf> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if let Some(found) = walk(&p, base) {
+                    return Some(found);
+                }
+            } else if p.file_name().is_some_and(|n| n == std::ffi::OsStr::new(base)) {
+                return Some(p);
+            }
+        }
+        None
+    }
+    walk(out_dir, &base).unwrap_or(sibling)
 }
 
 fn audio_path_next_to(osu: &Path, audio_filename: &str) -> PathBuf {
