@@ -100,7 +100,8 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                             try {
                                 if (out.startsWith("ERR:")) {
                                     val detail = out.removePrefix("ERR:")
-                                    result.error("osu_download", if (logs.isNotEmpty()) "$detail\n$logs" else detail)
+                                    val msg = if (logs.isNotEmpty()) "$detail\n$logs" else detail
+                                    result.error("osu_download", msg, null)
                                 } else {
                                     report("下载完成，解析谱面…")
                                     result.success(setup(out))
