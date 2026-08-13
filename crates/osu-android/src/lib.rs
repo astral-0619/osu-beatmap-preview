@@ -282,6 +282,18 @@ pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeLoadBeatm
     }
 }
 
+/// 当前帧缓冲尺寸，打包为 jlong（高 32 位=宽，低 32 位=高）。
+/// 0 表示渲染器尚未出帧。Flutter 侧用它把 Texture 控件宽高比
+/// 对齐到真实交换链，避免画面被拉伸。
+#[no_mangle]
+pub extern "system" fn Java_io_github_astral_osu_OsuRenderPlugin_nativeGetFrameSize<'frame>(
+    _env: EnvUnowned<'frame>,
+    _class: JClass<'frame>,
+) -> jlong {
+    let (w, h) = renderer::frame_size();
+    ((w as i64) << 32) | h as i64
+}
+
 /// Manually set the loaded beatmap state (used for tests / desktop demo).
 pub fn set_state_for_test(state: BeatmapState) {
     renderer::set_state(Some(Arc::new(state)));

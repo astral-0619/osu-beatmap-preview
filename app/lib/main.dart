@@ -39,6 +39,8 @@ class _PreviewPageState extends State<PreviewPage> {
   bool _loading = false;
   Timer? _clockTimer;
   final List<String> _logs = [];
+  // 交换链真实宽高比（出首帧后从 Rust 侧取），Texture 控件按它显示防止拉伸。
+  double? _frameAspect;
 
   static const _modeNames = ['std', 'taiko', 'catch', 'mania'];
 
@@ -93,14 +95,34 @@ class _PreviewPageState extends State<PreviewPage> {
         _textureId = result['textureId'] as int;
         _playing = true;
         _status = '已加载，音频由 ExoPlayer 播，画面由 Rust wgpu 画（bid=$bid）';
+        _frameAspect = null;
       });
       _startClock();
+      _queryFrameSize(3);
     } on PlatformException catch (e) {
       setState(() => _status = '加载失败: ${e.message}');
     } catch (e) {
       setState(() => _status = '加载失败: $e');
     } finally {
       setState(() => _loading = false);
+    }
+  }
+
+  /// 出首帧后取交换链尺寸，对齐 Texture 控件宽高比（重试 [retries] 次）。
+  Future<void> _queryFrameSize(int retries) async {
+    try {
+      final size = await _channel.invokeListMethod<int>('frameSize');
+      if (mounted && size != null && size.length == 2) {
+        final w = size[0], h = size[1];
+        if (w > 0 && h > 0) {
+          setState(() => _frameAspect = w / h);
+          return;
+        }
+      }
+    } catch (_) {}
+    if (retries > 0 && mounted) {
+      Future.delayed(const Duration(milliseconds: 400),
+          () => _queryFrameSize(retries - 1));
     }
   }
 
@@ -159,7 +181,7 @@ class _PreviewPageState extends State<PreviewPage> {
               child: _textureId == null
                   ? Text(_status, textAlign: TextAlign.center)
                   : AspectRatio(
-                      aspectRatio: 4 / 3,
+                      aspectRatio: _frameAspect ?? 4 / 3,
                       child: Texture(textureId: _textureId!),
                     ),
             ),

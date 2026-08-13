@@ -60,6 +60,8 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private external fun nativeDownloadByBid(bid: Int, cacheDir: String): String
     // 取走 Rust 侧累积的下载日志（取走后清空），用于实时上屏。
     private external fun nativeTakeDownloadLog(): String
+    // 当前帧缓冲尺寸（高 32 位=宽，低 32 位=高；0=尚未出帧）。
+    private external fun nativeGetFrameSize(): Long
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -137,6 +139,10 @@ class OsuRenderPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     nativeSetSpeed(x100); result.success(null)
                 }
                 "positionMs" -> result.success(player?.currentPosition ?: 0L)
+                "frameSize" -> {
+                    val v = nativeGetFrameSize()
+                    result.success(listOf((v shr 32).toInt(), (v and 0xFFFFFFFFL).toInt()))
+                }
                 "dispose" -> { teardown(); result.success(null) }
                 else -> result.notImplemented()
             }

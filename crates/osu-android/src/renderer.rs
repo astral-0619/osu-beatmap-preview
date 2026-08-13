@@ -159,11 +159,14 @@ fn init_renderer(window: *mut c_void) -> Result<(), String> {
     .map_err(|e| format!("request_device: {e}"))?;
 
     let caps = surface.get_capabilities(&adapter);
+    // 颜色按 sRGB 空间直接给（2D 绘画惯例），优先选非 sRGB 格式，
+    // 避免 wgpu 把线性值写进 sRGB 交换链导致整体发灰发亮。
     let format = caps
         .formats
         .iter()
         .copied()
-        .find(|f| f.is_srgb())
+        .find(|f| !f.is_srgb())
+        .or_else(|| caps.formats.iter().copied().find(|f| f.is_srgb()))
         .or_else(|| caps.formats.first().copied())
         .ok_or("no surface format")?;
     let config = wgpu::SurfaceConfiguration {
@@ -242,6 +245,11 @@ fn pollster_block_on<F: std::future::Future>(fut: F) -> F::Output {
             Poll::Pending => std::thread::yield_now(),
         }
     }
+}
+
+/// 当前帧缓冲尺寸（Flutter 侧据此设置 Texture 控件的宽高比）。
+pub(crate) fn frame_size() -> (u32, u32) {
+    RENDERER.lock().as_ref().map(|r| r.size).unwrap_or((0, 0))
 }
 
 fn render_loop() {
